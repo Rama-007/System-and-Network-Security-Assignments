@@ -1,0 +1,138 @@
+role user(Ui,RA,GWN,SDj: agent, H: hash_func, SKuira: symmetric_key,
+		Snd,Rcv:channel(dy))
+played_by Ui
+def=
+local State : nat, IDi,IDsdj,IDgwn,PWi,BIOi,RPWi,A: text,
+	R,Kgwnui,Kgwnsdj,Rgwn,Rsdj,Rui,T1,M1,TIDi,TIDinew: text,
+	M2,M3,T3,T4,Sigmai: text, Gen,Rep: hash_func
+const sr1,sr2,ui_gwn_t1,ui_gwn_rui,gwn_ui_t4,gwn_ui_tidinew : protocol_id
+init State := 0
+transition
+1. State = 0 /\ Rcv(start) =|>
+% User Registration Phase
+% Generate Random secrets a,r
+State' := 1 /\ A' := new() /\ R' := new()
+% a,r,PWi,BIOi are known only to user i
+	/\ secret({PWi,BIOi,A',R'}, sr1, Ui)
+% sigmai and RPWi are calculated
+	/\ Sigmai' := Gen(BIOi) /\ RPWi' := xor(H(PWi.Sigmai'.A'),R')
+% Send IDi and RPWi via secure channel
+	/\ Snd({IDi.RPWi'}_SKuira)
+% Receive information securely from RA to SPi
+2. State = 1 /\ Rcv({xor(H(IDi.Kgwnui),xor(H(PWi.Sigmai'.A'),R')).TIDi'}_SKuira) =|>
+% Login Phase
+   State' := 2 /\ secret({Kgwnui,Kgwnsdj},sr2,GWN)
+% Generate RUi and T1 and Calculate M1,M2,M3
+		/\ M1' := H(IDi.Kgwnui) /\ Rui' := new() /\ T1' := new()
+		/\ M2' := xor(M1',Rui') /\ M3' := H(M2'.T1'.IDi.TIDi'.Rui')
+% Send TIDi,M2,M3,T1 to GWN
+		/\ Snd(TIDi'.M2'.M3'.T1')
+% Witness Ui generated freshly new values Rui,T1 for GWN
+		/\ witness(Ui,GWN,ui_gwn_t1,T1') /\ witness(Ui,GWN,ui_gwn_rui,Rui')
+% Authentication and key agreement phase
+% Receive reply from GWN
+3. State = 2 /\ Rcv({Rui'.Rgwn'.Rsdj'.IDsdj.IDgwn.H(H(IDsdj.Kgwnsdj))}_H(IDi.Kgwnui).
+			xor(TIDinew',H(TIDi'.H(IDi.Kgwnui).T3'.T4')).
+			H(H(H(IDi.IDsdj.IDgwn.Rui'.Rgwn'.Rsdj'.H(H(IDi.Kgwnui)).H(H(IDsdj.Kgwnsdj))).T3').T4'.Rui').T3'.T4') =|>
+% Ui Accepts T4 and TIDinew generated for Ui by GWN
+   State' := 3 /\ request(GWN,Ui,gwn_ui_t4,T4') /\ request(GWN,Ui,gwn_ui_tidinew,TIDinew')
+end role
+
+
+role registrationauthority(Ui,RA,GWN,SDj: agent, H: hash_func, SKuira: symmetric_key,
+		Snd,Rcv:channel(dy))
+played_by RA
+def=
+local State : nat, IDi,TIDi,Kgwnui,Ai,RPWi: text
+const sr2 : protocol_id
+init State := 0
+transition
+% Receive IDi and RPWi securely from Ui to RA
+1. State = 0 /\ Rcv({IDi.RPWi'}_SKuira) =|>
+% Generates Kgwnui and TIDi and computes Ai 
+State' := 1 /\ Kgwnui' := new() /\ secret({Kgwnui'},sr2,GWN)
+		/\ Ai' := xor(H(IDi.Kgwnui'),RPWi') /\ TIDi' := new()
+%Send Ai and TIDi securely from RA to SPi
+		/\ Snd({Ai'.TIDi'}_SKuira)
+end role
+
+
+role gatewaynode(Ui,RA,GWN,SDj: agent, H: hash_func, SKuira: symmetric_key,
+		Snd,Rcv:channel(dy))
+played_by GWN
+def=
+local State : nat, IDi,IDsdj,IDgwn: text,
+	Kgwnui,Kgwnsdj,Rgwn,Rsdj,Rui,T1,TIDi,TIDinew: text,
+	M7,M8,M14,M15,M16,T2,T3,T4: text
+const sr2,ui_gwn_t1,ui_gwn_rui,gwn_sdj_t2,gwn_sdj_rgwn,sdj_gwn_t3,sdj_gwn_rsdj,gwn_ui_t4,gwn_ui_tidinew : protocol_id
+init State := 0
+transition
+% Receive TIDi,M2,M3,T1 from Ui to GWN
+1. State = 0 /\ Rcv(TIDi'.xor(H(IDi.Kgwnui),Rui').H(xor(H(IDi.Kgwnui),Rui').T1'.IDi.TIDi'.Rui').T1') =|>
+	State' := 1 /\ secret({Kgwnui,Kgwnsdj},sr2,GWN) /\ request(Ui,GWN,ui_gwn_t1,T1') /\ request(Ui,GWN,ui_gwn_rui,Rui') /\ Rgwn' := new() /\ T2' := new() 
+	/\ M7' := {IDi.IDgwn.Rui'.Rgwn'.H(H(IDi.Kgwnui))}_H(IDsdj.Kgwnsdj) 
+	/\ M8' := H(H(IDsdj.Kgwnsdj).T2'.IDi.IDsdj.IDgwn.Rgwn') 
+	/\ Snd(M7'.M8'.T2')
+% Witness GWN generating freshly new values Rgwn,T2 for SDj
+	/\ witness(GWN,SDj,gwn_sdj_t2,T2') /\ witness(GWN,SDj,gwn_sdj_rgwn,Rgwn')
+2. State = 2 /\ Rcv(xor(H(H(IDsdj.Kgwnsdj).T3'),Rsdj').H(H(IDi.IDsdj.IDgwn.Rui'.Rgwn'.Rsdj'.H(H(IDi.Kgwnui)).H(H(IDsdj.Kgwnsdj))).T3').H(Rsdj'.Rgwn'.IDsdj.IDgwn.T3').T3') =|>
+	State' := 3 /\ request(SDj,GWN,sdj_gwn_t3,T3') /\ request(SDj,GWN,sdj_gwn_rsdj,Rsdj') /\ T4' := new() /\ TIDinew' := new()
+	/\ M14' := {Rui'.Rgwn'.Rsdj'.IDsdj.IDgwn.H(H(IDsdj.Kgwnsdj))}_H(IDi.Kgwnui)
+	/\ M15' := xor(TIDinew',H(TIDi'.H(IDi.Kgwnui).T3'.T4')) 
+	/\ M16' := H(H(H(IDi.IDsdj.IDgwn.xor(xor(H(IDi.Kgwnui),Rui'),H(IDi.Kgwnui))).Rgwn'.Rsdj'.H(H(IDi.Kgwnui)).H(H(IDsdj.Kgwnsdj)).T3').T4'.Rui') 
+	/\ Snd(M14'.M15'.M16'.T3'.T4')
+	/\ witness(GWN,Ui,gwn_ui_t4,T4') /\ witness(GWN,Ui,gwn_ui_tidinew,TIDinew')
+end role
+
+
+role smartdevice(Ui,RA,GWN,SDj: agent, H: hash_func, SKuira: symmetric_key,
+		Snd,Rcv:channel(dy))
+played_by SDj
+def=
+local State : nat, IDi,IDsdj,IDgwn: text,
+	Kgwnui,Kgwnsdj,Rgwn,Rsdj,Rui,T1,TIDi,TIDinew: text,
+	M10,M11,M12,T2,T3: text
+const gwn_sdj_t2,gwn_sdj_rgwn,sdj_gwn_t3,sdj_gwn_rsdj : protocol_id
+init State := 0
+transition
+% Receive M7,M8,T2 from GWN to SDj
+1. State = 0 /\ Rcv({IDi.IDgwn.Rui'.Rgwn'.H(H(IDi.Kgwnui))}_H(IDsdj.Kgwnsdj).H(H(IDsdj.Kgwnsdj).T2'.IDi.IDsdj.IDgwn.Rgwn').T2') =|> 
+	State' := 1 /\ secret({Kgwnui,Kgwnsdj},sr2,GWN) /\ request(GWN,SDj,gwn_sdj_t2,T2') /\ request(GWN,SDj,gwn_sdj_rgwn,Rgwn') /\ Rsdj' := new() /\ T3' := new() 
+	/\ M10' := xor(H(H(IDsdj,Kgwnsdj).T3'),Rsdj')
+	/\ M11' := H(H(IDi.IDsdj.IDgwn.Rui'.Rgwn'.Rsdj'.H(H(IDi.Kgwnui)).H(H(IDsdj.Kgwnsdj))).T3') /\ M12' := H(Rsdj.Rgwn'.IDsdj.IDgwn.T3')
+	/\ Snd(M10'.M11'.M12'.T3')
+	/\ witness(SDj,GWN,sdj_gwn_t3,T3') /\ witness(SDj,GWN,sdj_gwn_rsdj,Rsdj')
+end role
+
+
+role session(Ui,RA,GWN,SDj: agent, H: hash_func, SKuira: symmetric_key)
+def=
+local S1, R1, S2, R2, S3, R3, S4, R4: channel (dy)
+composition
+	user (Ui, RA, GWN, SDj, H, SKuira, S1, R1)
+	/\ registrationauthority(Ui, RA, GWN, SDj, H, SKuira, S2, R2)
+	/\ gatewaynode (Ui, RA, GWN, SDj, H, SKuira, S3, R3)
+	/\ smartdevice (Ui, RA, GWN, SDj, H, SKuira, S4, R4)
+end role
+
+
+role environment()
+def=
+	const ui,ra,gwn,sdj: agent, h: hash_func, skuira: symmetric_key,
+		kgwnui,kgwnsdj,idi,idsdj,idgwn,t1,t2,t3,t4,tidi,tidinew: text,
+		gen,rep: hash_func, ui_gwn_t1,ui_gwn_rui,gwn_sdj_t2,gwn_sdj_rgwn,sdj_gwn_t3,sdj_gwn_rsdj,gwn_ui_t4, gwn_ui_tidinew,sr1,sr2: protocol_id
+	intruder_knowledge={t1,t2,t3,t4,h,gen,rep}
+	composition
+	session(ui, ra, gwn, sdj, h, skuira) /\ session(i, ra, gwn, sdj, h, skuira) /\ session(ui, i, gwn, sdj, h, skuira) /\ session(ui, ra, i, sdj, h, skuira) /\ session(ui, ra, gwn, i, h, skuira)
+end role
+
+
+goal
+secrecy_of sr1, sr2
+authentication_on ui_gwn_t1, ui_gwn_rui, gwn_sdj_t2
+authentication_on gwn_sdj_rgwn, sdj_gwn_t3, sdj_gwn_rsdj
+authentication_on gwn_ui_t4, gwn_ui_tidinew
+end goal
+
+
+environment()
